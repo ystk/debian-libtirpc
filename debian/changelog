@@ -1,0 +1,12 @@
+libtirpc (0.2.0-2) unstable; urgency=low
+
+  * Add pkg-config to list of build-deps; fixes FTBFS.
+
+ -- Steinar H. Gunderson <sesse@debian.org>  Sat, 04 Jul 2009 15:39:12 +0200
+
+libtirpc (0.2.0-1) unstable; urgency=low
+
+  * Initial upload to Debian, following Sun's license change of code from the
+    (non-free) Sun RPC license to a BSD-like license.
+
+ -- Steinar H. Gunderson <sesse@debian.org>  Thu, 25 Jun 2009 20:20:32 +0200

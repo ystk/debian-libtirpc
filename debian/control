@@ -1,0 +1,26 @@
+Source: libtirpc
+Priority: extra
+Maintainer: Steinar H. Gunderson <sesse@debian.org>
+Build-Depends: debhelper (>= 7), autotools-dev, quilt (>= 0.40), libtool, libgss-dev, libgssglue-dev, pkg-config
+Standards-Version: 3.8.2
+Section: libs
+
+Package: libtirpc-dev
+Section: libdevel
+Architecture: any
+Depends: libtirpc1 (= ${binary:Version})
+Description: transport-independent RPC library - development files
+ This package contains a port of Sun's transport-independent RPC library to
+ Linux. The library is intended as a replacement for the RPC code in the GNU C
+ library, providing among others support for RPC (and in turn, NFS) over IPv6.
+ .
+ This package contains the files needed for development against libtirpc.
+
+Package: libtirpc1
+Section: libs
+Architecture: any
+Depends: ${shlibs:Depends}
+Description: transport-independent RPC library
+ This package contains a port of Sun's transport-independent RPC library to
+ Linux. The library is intended as a replacement for the RPC code in the GNU C
+ library, providing among others support for RPC (and in turn, NFS) over IPv6.
