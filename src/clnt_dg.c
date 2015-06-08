@@ -309,10 +309,10 @@ clnt_dg_call(cl, proc, xargs, argsp, xresults, resultsp, utimeout)
 	struct sockaddr *sa;
 	sigset_t mask;
 	sigset_t newmask;
-	socklen_t inlen, salen;
+	socklen_t salen;
 	ssize_t recvlen = 0;
 	int rpc_lock_value;
-	u_int32_t xid;
+	u_int32_t xid, inval, outval;
 
 	outlen = 0;
 	sigfillset(&newmask);
@@ -366,7 +366,7 @@ call_again:
 
 	if ((! XDR_PUTINT32(xdrs, (int32_t *)&proc)) ||
 	    (! AUTH_MARSHALL(cl->cl_auth, xdrs)) ||
-	    (! (*xargs)(xdrs, argsp))) {
+	    (! AUTH_WRAP(cl->cl_auth, xdrs, xargs, argsp))) {
 		cu->cu_error.re_status = RPC_CANTENCODEARGS;
 		goto out;
 	}
@@ -381,6 +381,10 @@ call_again:
 	}
 
 send_again:
+	if (total_time <= 0) {
+		cu->cu_error.re_status = RPC_TIMEDOUT;
+		goto out;
+	}
 	nextsend_time = cu->cu_wait.tv_sec * 1000 + cu->cu_wait.tv_usec / 1000;
 	if (sendto(cu->cu_fd, cu->cu_outbuf, outlen, 0, sa, salen) != outlen) {
 		cu->cu_error.re_errno = errno;
@@ -396,8 +400,8 @@ get_reply:
 	 * (We assume that this is actually only executed once.)
 	 */
 	reply_msg.acpted_rply.ar_verf = _null_auth;
-	reply_msg.acpted_rply.ar_results.where = resultsp;
-	reply_msg.acpted_rply.ar_results.proc = xresults;
+	reply_msg.acpted_rply.ar_results.where = NULL;
+	reply_msg.acpted_rply.ar_results.proc = (xdrproc_t)xdr_void;
 
         fd.fd = cu->cu_fd;
         fd.events = POLLIN;
@@ -471,15 +475,20 @@ get_reply:
 		cu->cu_error.re_status = RPC_CANTRECV;
 		goto out;
 	}
-	if (recvlen >= sizeof(u_int32_t) &&
-	    (cu->cu_async == TRUE ||
-	    *((u_int32_t *)(void *)(cu->cu_inbuf)) ==
-	    *((u_int32_t *)(void *)(cu->cu_outbuf))))
-                inlen = (socklen_t)recvlen;
-        else {
-                total_time -= tv;
-                goto send_again;
-        }
+
+	if (recvlen < sizeof(u_int32_t)) {
+		total_time -= tv;
+		goto send_again;
+	}
+
+	if (cu->cu_async == FALSE) {
+		memcpy(&inval, cu->cu_inbuf, sizeof(u_int32_t));
+		memcpy(&outval, cu->cu_outbuf, sizeof(u_int32_t));
+		if (inval != outval) {
+			total_time -= tv;
+			goto send_again;
+		}
+	}
 
 	/*
 	 * now decode and validate the response
@@ -500,6 +509,10 @@ get_reply:
 					    &reply_msg.acpted_rply.ar_verf)) {
 				cu->cu_error.re_status = RPC_AUTHERROR;
 				cu->cu_error.re_why = AUTH_INVALIDRESP;
+			} else if (! AUTH_UNWRAP(cl->cl_auth, &reply_xdrs,
+						 xresults, resultsp)) {
+				if (cu->cu_error.re_status == RPC_SUCCESS)
+				     cu->cu_error.re_status = RPC_CANTDECODERES;
 			}
 			if (reply_msg.acpted_rply.ar_verf.oa_base != NULL) {
 				xdrs->x_op = XDR_FREE;

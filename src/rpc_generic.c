@@ -228,16 +228,16 @@ __rpc_getconfip(nettype)
 	extern thread_key_t tcp_key, udp_key;
 	extern mutex_t tsd_lock;
 
-	if (tcp_key == -1) {
+	if (tcp_key == KEY_INITIALIZER) {
 		mutex_lock(&tsd_lock);
-		if (tcp_key == -1)
+		if (tcp_key == KEY_INITIALIZER)
 			thr_keycreate(&tcp_key, free);
 		mutex_unlock(&tsd_lock);
 	}
 	netid_tcp = (char *)thr_getspecific(tcp_key);
-	if (udp_key == -1) {
+	if (udp_key == KEY_INITIALIZER) {
 		mutex_lock(&tsd_lock);
-		if (udp_key == -1)
+		if (udp_key == KEY_INITIALIZER)
 			thr_keycreate(&udp_key, free);
 		mutex_unlock(&tsd_lock);
 	}
@@ -523,7 +523,7 @@ __rpc_nconf2sockinfo(const struct netconfig *nconf, struct __rpc_sockinfo *sip)
 }
 
 int
-__rpc_nconf2fd(const struct netconfig *nconf)
+__rpc_nconf2fd_flags(const struct netconfig *nconf, int flags)
 {
 	struct __rpc_sockinfo si;
 	int fd;
@@ -531,13 +531,21 @@ __rpc_nconf2fd(const struct netconfig *nconf)
 	if (!__rpc_nconf2sockinfo(nconf, &si))
 		return 0;
 
-	if ((fd = socket(si.si_af, si.si_socktype, si.si_proto)) >= 0 &&
+	if ((fd = socket(si.si_af, si.si_socktype | flags, si.si_proto)) >= 0 &&
 	    si.si_af == AF_INET6) {
 		int val = 1;
 
+#ifdef INET6
 		setsockopt(fd, SOL_IPV6, IPV6_V6ONLY, &val, sizeof(val));
+#endif
 	}
 	return fd;
+}
+
+int
+__rpc_nconf2fd(const struct netconfig *nconf)
+{
+	return __rpc_nconf2fd_flags(nconf, 0);
 }
 
 int
@@ -812,6 +820,11 @@ int
 __rpc_sockisbound(int fd)
 {
 	struct sockaddr_storage ss;
+	union {
+		struct sockaddr_in  sin;
+		struct sockaddr_in6 sin6;
+		struct sockaddr_un  usin;
+	} u_addr;
 	socklen_t slen;
 
 	slen = sizeof (struct sockaddr_storage);
@@ -820,17 +833,17 @@ __rpc_sockisbound(int fd)
 
 	switch (ss.ss_family) {
 		case AF_INET:
-			return (((struct sockaddr_in *)
-			    (void *)&ss)->sin_port != 0);
+			memcpy(&u_addr.sin, &ss, sizeof(u_addr.sin)); 
+			return (u_addr.sin.sin_port != 0);
 #ifdef INET6
 		case AF_INET6:
-			return (((struct sockaddr_in6 *)
-			    (void *)&ss)->sin6_port != 0);
+			memcpy(&u_addr.sin6, &ss, sizeof(u_addr.sin6)); 
+			return (u_addr.sin6.sin6_port != 0);
 #endif
 		case AF_LOCAL:
 			/* XXX check this */
-			return (((struct sockaddr_un *)
-			    (void *)&ss)->sun_path[0] != '\0');
+			memcpy(&u_addr.usin, &ss, sizeof(u_addr.usin)); 
+			return (u_addr.usin.sun_path[0] != 0);
 		default:
 			break;
 	}

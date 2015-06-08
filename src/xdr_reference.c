@@ -38,7 +38,6 @@
  * "pointers".  See xdr.h for more info on the interface to xdr.
  */
 
-#include "namespace.h"
 #include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,7 +45,10 @@
 
 #include <rpc/types.h>
 #include <rpc/xdr.h>
-#include "libc_private.h"
+
+#if defined(__FreeBSD__) || defined(__NetBSD__)
+#include <libc_private.h>
+#endif
 
 /*
  * XDR an indirect pointer

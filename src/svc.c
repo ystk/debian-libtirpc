@@ -77,7 +77,6 @@ static struct svc_callout
 
 extern rwlock_t svc_lock;
 extern rwlock_t svc_fd_lock;
-extern struct svc_auth_ops svc_auth_gss_ops;
 
 static struct svc_callout *svc_find (rpcprog_t, rpcvers_t,
 				     struct svc_callout **, char *);
@@ -613,7 +612,7 @@ svc_getreqset (readfds)
   maskp = readfds->fds_bits;
   for (sock = 0; sock < FD_SETSIZE; sock += NFDBITS)
     {
-      for (mask = *maskp++; (bit = ffs (mask)) != 0; mask ^= (1 << (bit - 1)))
+      for (mask = *maskp++; (bit = ffsl(mask)) != 0; mask ^= (1L << (bit - 1)))
 	{
 	  /* sock has input waiting */
 	  fd = sock + bit - 1;
@@ -650,6 +649,7 @@ svc_getreq_common (fd)
     {
       if (SVC_RECV (xprt, &msg))
 	{
+	  bool_t no_dispatch;
 
 	  /* now find the exported program and call it */
 	  struct svc_callout *s;
@@ -661,11 +661,14 @@ svc_getreq_common (fd)
 	  r.rq_proc = msg.rm_call.cb_proc;
 	  r.rq_cred = msg.rm_call.cb_cred;
 	  /* first authenticate the message */
-	  if ((why = _authenticate (&r, &msg)) != AUTH_OK)
+	  why = _gss_authenticate(&r, &msg, &no_dispatch);
+	  if (why != AUTH_OK)
 	    {
 	      svcerr_auth (xprt, why);
 	      goto call_done;
 	    }
+	  if (no_dispatch)
+	    goto call_done;
 	  /* now match message with a registered service */
 	  prog_found = FALSE;
 	  low_vers = (rpcvers_t) - 1L;
@@ -715,8 +718,8 @@ svc_getreq_common (fd)
 	  SVC_DESTROY (xprt);
 	  break;
 	}
-      else if ((xprt->xp_auth != NULL) &&
-	       (xprt->xp_auth->svc_ah_ops != &svc_auth_gss_ops))
+    else if ((xprt->xp_auth != NULL) &&
+	     (xprt->xp_auth->svc_ah_private == NULL))
 	{
 	  xprt->xp_auth = NULL;
 	}

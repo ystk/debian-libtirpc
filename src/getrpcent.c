@@ -46,7 +46,9 @@
 #include <rpcsvc/yp_prot.h>
 #include <rpcsvc/ypclnt.h>
 #endif
+#if defined(__FreeBSD__) || defined(__NetBSD__)
 #include <libc_private.h>
+#endif
 
 /*
  * Internet version.
@@ -136,7 +138,7 @@ no_yp:
 
 struct rpcent *
 getrpcbyname(name)
-	char *name;
+	const char *name;
 {
 	struct rpcent *rpc = NULL;
 	char **rp;

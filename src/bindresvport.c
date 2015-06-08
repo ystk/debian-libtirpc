@@ -46,6 +46,9 @@
 #include <rpc/rpc.h>
 
 #include <string.h>
+#include <reentrant.h>
+
+extern pthread_mutex_t port_lock;
 
 /*
  * Bind a socket to a privileged IP port
@@ -80,19 +83,23 @@ bindresvport_sa(sd, sa)
 	static u_int16_t port;
 	static short startport = STARTPORT;
 	socklen_t salen;
-	int nports = ENDPORT - startport + 1;
+	int nports;
 	int endport = ENDPORT;
 	int i;
+
+	mutex_lock(&port_lock);
+	nports = ENDPORT - startport + 1;
 
         if (sa == NULL) {
                 salen = sizeof(myaddr);
                 sa = (struct sockaddr *)&myaddr;
 
-                if (getsockname(sd, sa, &salen) == -1)
-                        return -1;      /* errno is correctly set */
+                if (getsockname(sd, (struct sockaddr *)&myaddr, &salen) == -1) {
+                    mutex_unlock(&port_lock);
+                    return -1;      /* errno is correctly set */
+                }
 
-                af = sa->sa_family;
-                memset(sa, 0, salen);
+                af = myaddr.ss_family;
         } else
                 af = sa->sa_family;
 
@@ -113,6 +120,7 @@ bindresvport_sa(sd, sa)
 #endif
         default:
                 errno = EPFNOSUPPORT;
+                mutex_unlock(&port_lock);
                 return (-1);
         }
         sa->sa_family = af;
@@ -138,6 +146,8 @@ bindresvport_sa(sd, sa)
 	    port = LOWPORT + port % (STARTPORT - LOWPORT);
 	    goto again;
 	}
+	mutex_unlock(&port_lock);
+
         return (res);
 }
 #else

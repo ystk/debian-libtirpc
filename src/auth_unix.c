@@ -49,7 +49,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
 
+#include <rpc/clnt.h>
 #include <rpc/types.h>
 #include <rpc/xdr.h>
 #include <rpc/auth.h>
@@ -95,6 +97,8 @@ authunix_create(machname, uid, gid, len, aup_gids)
 	AUTH *auth;
 	struct audata *au;
 
+	memset(&rpc_createerr, 0, sizeof(rpc_createerr));
+
 	/*
 	 * Allocate and set up auth handle
 	 */
@@ -102,14 +106,16 @@ authunix_create(machname, uid, gid, len, aup_gids)
 	auth = mem_alloc(sizeof(*auth));
 #ifndef _KERNEL
 	if (auth == NULL) {
-		warnx("authunix_create: out of memory");
+		rpc_createerr.cf_stat = RPC_SYSTEMERROR;
+		rpc_createerr.cf_error.re_errno = ENOMEM;
 		goto cleanup_authunix_create;
 	}
 #endif
 	au = mem_alloc(sizeof(*au));
 #ifndef _KERNEL
 	if (au == NULL) {
-		warnx("authunix_create: out of memory");
+		rpc_createerr.cf_stat = RPC_SYSTEMERROR;
+		rpc_createerr.cf_error.re_errno = ENOMEM;
 		goto cleanup_authunix_create;
 	}
 #endif
@@ -134,15 +140,18 @@ authunix_create(machname, uid, gid, len, aup_gids)
 	 * Serialize the parameters into origcred
 	 */
 	xdrmem_create(&xdrs, mymem, MAX_AUTH_BYTES, XDR_ENCODE);
-	if (! xdr_authunix_parms(&xdrs, &aup)) 
-		abort();
+	if (!xdr_authunix_parms(&xdrs, &aup)) {
+		rpc_createerr.cf_stat = RPC_CANTENCODEARGS;
+		goto cleanup_authunix_create;
+	}
 	au->au_origcred.oa_length = len = XDR_GETPOS(&xdrs);
 	au->au_origcred.oa_flavor = AUTH_UNIX;
 #ifdef _KERNEL
 	au->au_origcred.oa_base = mem_alloc((u_int) len);
 #else
 	if ((au->au_origcred.oa_base = mem_alloc((u_int) len)) == NULL) {
-		warnx("authunix_create: out of memory");
+		rpc_createerr.cf_stat = RPC_SYSTEMERROR;
+		rpc_createerr.cf_error.re_errno = ENOMEM;
 		goto cleanup_authunix_create;
 	}
 #endif
@@ -153,6 +162,7 @@ authunix_create(machname, uid, gid, len, aup_gids)
 	 */
 	auth->ah_cred = au->au_origcred;
 	marshal_new_auth(auth);
+	auth_get(auth);		/* Reference for caller */
 	return (auth);
 #ifndef _KERNEL
  cleanup_authunix_create:
@@ -177,18 +187,64 @@ authunix_create_default()
 	int len;
 	char machname[MAXHOSTNAMELEN + 1];
 	uid_t uid;
-	gid_t gid;
-	gid_t gids[NGRPS];
+	gid_t gid, *gids;
+	AUTH *result;
 
-	if (gethostname(machname, sizeof machname) == -1)
-		abort();
+	memset(&rpc_createerr, 0, sizeof(rpc_createerr));
+
+	if (gethostname(machname, sizeof machname) == -1) {
+		rpc_createerr.cf_error.re_errno = errno;
+		goto out_err;
+	}
 	machname[sizeof(machname) - 1] = 0;
 	uid = geteuid();
 	gid = getegid();
-	if ((len = getgroups(NGRPS, gids)) < 0)
-		abort();
+
+	/* According to glibc comments, an intervening setgroups(2)
+	 * call can increase the number of supplemental groups between
+	 * these two getgroups(2) calls. */
+retry:
+	len = getgroups(0, NULL);
+	if (len == -1) {
+		rpc_createerr.cf_error.re_errno = errno;
+		goto out_err;
+	}
+
+	/* Bump allocation size.  A zero allocation size may result in a
+	 * NULL calloc(3) result, which is not reliably distinguishable
+	 * from a memory allocation error. */
+	gids = calloc(len + 1, sizeof(gid_t));
+	if (gids == NULL) {
+		rpc_createerr.cf_error.re_errno = ENOMEM;
+		goto out_err;
+	}
+
+	len = getgroups(len, gids);
+	if (len == -1) {
+		rpc_createerr.cf_error.re_errno = errno;
+		free(gids);
+		if (rpc_createerr.cf_error.re_errno == EINVAL) {
+			rpc_createerr.cf_error.re_errno = 0;
+			goto retry;
+		}
+		goto out_err;
+	}
+
+	/*
+	 * AUTH_UNIX sends on the wire only the first NGRPS groups in the
+	 * supplemental groups list.
+	 */
+	if (len > NGRPS)
+		len = NGRPS;
+
 	/* XXX: interface problem; those should all have been unsigned */
-	return (authunix_create(machname, uid, gid, len, gids));
+	result = authunix_create(machname, uid, gid, len, gids);
+	free(gids);
+	return result;
+
+out_err:
+	rpc_createerr.cf_stat = RPC_SYSTEMERROR;
+	return NULL;
 }
 
 /*
@@ -341,6 +397,12 @@ marshal_new_auth(auth)
 	XDR_DESTROY(xdrs);
 }
 
+static bool_t
+authunix_wrap(AUTH *auth, XDR *xdrs, xdrproc_t xfunc, caddr_t xwhere)
+{
+	return ((*xfunc)(xdrs, xwhere));
+}
+
 static struct auth_ops *
 authunix_ops()
 {
@@ -356,6 +418,8 @@ authunix_ops()
 		ops.ah_validate = authunix_validate;
 		ops.ah_refresh = authunix_refresh;
 		ops.ah_destroy = authunix_destroy;
+		ops.ah_wrap = authunix_wrap;
+		ops.ah_unwrap = authunix_wrap;
 	}
 	mutex_unlock(&ops_lock);
 	return (&ops);

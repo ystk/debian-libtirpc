@@ -1,7 +1,7 @@
 /*	$NetBSD: clnt.h,v 1.14 2000/06/02 22:57:55 fvdl Exp $	*/
 
 /*
- * Copyright (c) 2009, Sun Microsystems, Inc.
+ * Copyright (c) 2010, Oracle America, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -11,7 +11,7 @@
  * - Redistributions in binary form must reproduce the above copyright notice,
  *   this list of conditions and the following disclaimer in the documentation
  *   and/or other materials provided with the distribution.
- * - Neither the name of Sun Microsystems, Inc. nor the names of its
+ * - Neither the name of the "Oracle America, Inc." nor the names of its
  *   contributors may be used to endorse or promote products derived
  *   from this software without specific prior written permission.
  *
@@ -34,16 +34,12 @@
 
 /*
  * clnt.h - Client side remote procedure call interface.
- *
- * Copyright (c) 1986-1991,1994-1999 by Sun Microsystems, Inc.
- * All rights reserved.
  */
 
 #ifndef _TIRPC_CLNT_H_
 #define _TIRPC_CLNT_H_
 
-//#include <rpc/clnt_stat.h>
-#include "clnt_stat.h"
+#include <rpc/clnt_stat.h>
 #include <rpc/auth.h>
 
 #include <sys/cdefs.h>
