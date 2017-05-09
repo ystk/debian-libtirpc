@@ -3,3 +3,4 @@
 05-hurd-port.diff
 06-hurd-client-port.diff
 09-autogen.sh.diff
+CVE-2017-8779.patch

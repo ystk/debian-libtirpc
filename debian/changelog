@@ -1,3 +1,9 @@
+libtirpc (0.2.5-1+deb8u1) jessie-security; urgency=medium
+
+  * CVE-2017-8779
+
+ -- Moritz Mühlenhoff <jmm@debian.org>  Thu, 04 May 2017 16:05:42 +0200
+
 libtirpc (0.2.5-1) unstable; urgency=medium
 
   * New upstream version 0.2.5.
